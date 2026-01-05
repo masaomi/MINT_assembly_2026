@@ -1,0 +1,998 @@
+# app.R - MINT Assembly Demo Shiny Application
+# hifiasm-based genome assembly demonstration tool
+
+# Load required packages
+library(shiny)
+library(shinydashboard)
+library(shinyWidgets)
+library(DT)
+library(ggplot2)
+library(plotly)
+library(processx)
+library(dplyr)
+library(tidyr)
+library(scales)
+
+# Source helper functions
+source("R/run_hifiasm.R")
+source("R/parse_results.R")
+source("R/plot_functions.R")
+
+# Configuration
+DATA_DIR <- "MINT_Tage"
+
+# Get available sample files
+get_sample_files <- function() {
+  patterns <- c("\\.fasta$", "\\.fa$", "\\.fna$")
+  files <- character(0)
+  
+  # Check MINT_Tage directory
+  if (dir.exists(DATA_DIR)) {
+    for (pattern in patterns) {
+      found <- list.files(DATA_DIR, pattern = pattern, full.names = FALSE, recursive = FALSE)
+      if (length(found) > 0) {
+        files <- c(files, file.path(DATA_DIR, found))
+      }
+    }
+  }
+  
+  # Also check data directory
+  if (dir.exists("data")) {
+    for (pattern in patterns) {
+      found <- list.files("data", pattern = pattern, full.names = FALSE, recursive = TRUE)
+      if (length(found) > 0) {
+        files <- c(files, file.path("data", found))
+      }
+    }
+  }
+  
+  if (length(files) == 0) {
+    files <- c("No FASTA files found")
+  }
+  
+  return(files)
+}
+
+# Get available pre-computed GFA files for demo mode
+get_demo_gfa_files <- function() {
+  gfa_files <- list()
+  
+  # Check known directories with pre-computed results
+  demo_dirs <- c(
+    file.path(DATA_DIR, "kokai_100K"),
+    file.path(DATA_DIR, "kokai_1M_11x"),
+    file.path(DATA_DIR, "kokai_1M_24x")
+  )
+  
+  for (dir in demo_dirs) {
+    if (dir.exists(dir)) {
+      primary_gfa <- file.path(dir, "kokai.asm.bp.p_ctg.gfa")
+      if (file.exists(primary_gfa)) {
+        # Extract friendly name from directory
+        name <- basename(dir)
+        gfa_files[[name]] <- primary_gfa
+      }
+    }
+  }
+  
+  return(gfa_files)
+}
+
+# Check if hifiasm is available
+hifiasm_available <- function() {
+  !is.null(find_hifiasm())
+}
+
+# UI Definition
+ui <- dashboardPage(
+  skin = "blue",
+  
+  # Header
+  dashboardHeader(
+    title = span(icon("dna"), "MINT Assembly Demo"),
+    titleWidth = 280
+  ),
+  
+  # Sidebar
+  dashboardSidebar(
+    width = 280,
+    
+    sidebarMenu(
+      id = "tabs",
+      menuItem("Assembly", tabName = "assembly", icon = icon("play")),
+      menuItem("Results", tabName = "results", icon = icon("chart-bar")),
+      menuItem("Comparison", tabName = "comparison", icon = icon("balance-scale")),
+      menuItem("Help", tabName = "help", icon = icon("question-circle"))
+    ),
+    
+    hr(),
+    
+    # Parameter controls
+    div(style = "padding: 10px;",
+        h4(icon("sliders-h"), "Parameters", style = "color: #fff;"),
+        
+        # Mode selection
+        radioGroupButtons(
+          "mode",
+          label = "Mode:",
+          choices = c("Demo (Pre-computed)" = "demo", "Run Assembly" = "run"),
+          selected = "demo",
+          status = "primary",
+          size = "sm",
+          justified = TRUE
+        ),
+        
+        # Demo mode: select pre-computed results
+        conditionalPanel(
+          condition = "input.mode == 'demo'",
+          selectInput(
+            "demo_gfa",
+            label = "Select Dataset:",
+            choices = names(get_demo_gfa_files()),
+            selected = NULL,
+            width = "100%"
+          ),
+          helpText("Load pre-computed assembly results")
+        ),
+        
+        # Run mode: assembly parameters
+        conditionalPanel(
+          condition = "input.mode == 'run'",
+          
+          # Input file selection
+          selectInput(
+            "input_file",
+            label = "Input FASTA File:",
+            choices = get_sample_files(),
+            selected = NULL,
+            width = "100%"
+          ),
+          
+          # K-mer size
+          sliderInput(
+            "kmer",
+            label = "K-mer Size:",
+            min = 15,
+            max = 63,
+            value = 51,
+            step = 2
+          ),
+          helpText("Larger k-mer = more specific but may miss overlaps"),
+          
+          # Error correction rounds
+          sliderInput(
+            "error_rounds",
+            label = "Error Correction Rounds:",
+            min = 0,
+            max = 10,
+            value = 3,
+            step = 1
+          ),
+          helpText("More rounds = better accuracy but slower"),
+          
+          # Thread count
+          sliderInput(
+            "threads",
+            label = "CPU Threads:",
+            min = 1,
+            max = 8,
+            value = 4,
+            step = 1
+          )
+        ),
+        
+        # Minimum contig length (applies to both modes)
+        numericInput(
+          "min_length",
+          label = "Min Contig Length (bp):",
+          value = 500,
+          min = 0,
+          max = 10000,
+          step = 100
+        ),
+        
+        hr(),
+        
+        # Action button (changes based on mode)
+        conditionalPanel(
+          condition = "input.mode == 'demo'",
+          actionButton(
+            "load_demo",
+            label = "Load Results",
+            icon = icon("folder-open"),
+            class = "btn-success action-button"
+          )
+        ),
+        
+        conditionalPanel(
+          condition = "input.mode == 'run'",
+          actionButton(
+            "run_assembly",
+            label = "Run Assembly",
+            icon = icon("rocket"),
+            class = "btn-primary action-button"
+          )
+        ),
+        
+        br(), br(),
+        
+        # Status indicator
+        div(
+          id = "status_container",
+          style = "text-align: center;",
+          uiOutput("status_indicator")
+        ),
+        
+        # hifiasm availability warning
+        conditionalPanel(
+          condition = "input.mode == 'run'",
+          uiOutput("hifiasm_status")
+        )
+    )
+  ),
+  
+  # Body
+  dashboardBody(
+    # Include custom CSS
+    tags$head(
+      # Viewport meta tag for mobile responsiveness
+      tags$meta(name = "viewport", content = "width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes"),
+      tags$meta(name = "mobile-web-app-capable", content = "yes"),
+      tags$meta(name = "apple-mobile-web-app-capable", content = "yes"),
+      tags$meta(name = "apple-mobile-web-app-status-bar-style", content = "black-translucent"),
+      
+      # CSS
+      tags$link(rel = "stylesheet", type = "text/css", href = "custom.css"),
+      tags$style(HTML("
+        .content-wrapper { background-color: #0a1628; }
+        .box { background-color: rgba(17, 34, 64, 0.8); color: #e6f1ff; }
+      ")),
+      
+      # JavaScript for mobile detection and sidebar auto-close
+      tags$script(HTML("
+        $(document).ready(function() {
+          // Auto-close sidebar on mobile after menu click
+          if (window.innerWidth <= 768) {
+            $('.sidebar-menu a').on('click', function() {
+              setTimeout(function() {
+                $('body').removeClass('sidebar-open');
+                $('body').addClass('sidebar-collapse');
+              }, 100);
+            });
+          }
+          
+          // Handle orientation change
+          window.addEventListener('orientationchange', function() {
+            setTimeout(function() {
+              window.dispatchEvent(new Event('resize'));
+            }, 100);
+          });
+          
+          // Close sidebar when clicking outside on mobile
+          $(document).on('click', '.content-wrapper', function() {
+            if (window.innerWidth <= 768 && $('body').hasClass('sidebar-open')) {
+              $('body').removeClass('sidebar-open');
+              $('body').addClass('sidebar-collapse');
+            }
+          });
+        });
+      "))
+    ),
+    
+    tabItems(
+      # Assembly Tab
+      tabItem(
+        tabName = "assembly",
+        
+        fluidRow(
+          box(
+            title = span(icon("terminal"), "Assembly Progress"),
+            status = "primary",
+            solidHeader = TRUE,
+            width = 12,
+            
+            # Progress bar
+            div(
+              style = "margin-bottom: 20px;",
+              progressBar(
+                id = "assembly_progress",
+                value = 0,
+                total = 100,
+                status = "primary",
+                display_pct = TRUE,
+                striped = TRUE
+              )
+            ),
+            
+            # Current stage
+            div(
+              style = "text-align: center; margin-bottom: 15px;",
+              h4(textOutput("current_stage"))
+            ),
+            
+            # Log output
+            div(
+              class = "log-output",
+              style = "height: 250px; overflow-y: auto;",
+              verbatimTextOutput("log_output")
+            )
+          )
+        ),
+        
+        fluidRow(
+          # Quick stats boxes
+          valueBoxOutput("stat_contigs", width = 3),
+          valueBoxOutput("stat_total_length", width = 3),
+          valueBoxOutput("stat_n50", width = 3),
+          valueBoxOutput("stat_largest", width = 3)
+        )
+      ),
+      
+      # Results Tab
+      tabItem(
+        tabName = "results",
+        
+        fluidRow(
+          # Statistics Table
+          box(
+            title = span(icon("table"), "Assembly Statistics"),
+            status = "primary",
+            solidHeader = TRUE,
+            width = 4,
+            
+            tableOutput("stats_table")
+          ),
+          
+          # Plots
+          box(
+            title = span(icon("chart-area"), "Visualizations"),
+            status = "primary",
+            solidHeader = TRUE,
+            width = 8,
+            
+            tabsetPanel(
+              tabPanel(
+                "Length Distribution",
+                br(),
+                plotlyOutput("plot_histogram", height = "350px")
+              ),
+              tabPanel(
+                "Log Scale",
+                br(),
+                plotlyOutput("plot_histogram_log", height = "350px")
+              ),
+              tabPanel(
+                "Cumulative (Nx)",
+                br(),
+                plotlyOutput("plot_cumulative", height = "350px")
+              ),
+              tabPanel(
+                "Categories",
+                br(),
+                plotlyOutput("plot_categories", height = "350px")
+              )
+            )
+          )
+        ),
+        
+        fluidRow(
+          # Sequence Preview
+          box(
+            title = span(icon("dna"), "Top Contigs Preview"),
+            status = "primary",
+            solidHeader = TRUE,
+            width = 12,
+            collapsible = TRUE,
+            collapsed = FALSE,
+            
+            DTOutput("contig_preview_table")
+          )
+        ),
+        
+        fluidRow(
+          # Download section
+          box(
+            title = span(icon("download"), "Download Results"),
+            status = "success",
+            solidHeader = TRUE,
+            width = 12,
+            
+            div(
+              class = "download-section",
+              downloadButton("download_fasta", "Download FASTA", class = "btn-success"),
+              downloadButton("download_stats", "Download Statistics (CSV)", class = "btn-info"),
+              downloadButton("download_gfa", "Download GFA", class = "btn-warning")
+            )
+          )
+        )
+      ),
+      
+      # Comparison Tab
+      tabItem(
+        tabName = "comparison",
+        
+        fluidRow(
+          box(
+            title = span(icon("balance-scale"), "Assembly Run Comparison"),
+            status = "primary",
+            solidHeader = TRUE,
+            width = 12,
+            
+            div(
+              style = "margin-bottom: 20px;",
+              actionButton("clear_history", "Clear History", 
+                           icon = icon("trash"), class = "btn-danger btn-sm")
+            ),
+            
+            DTOutput("comparison_table")
+          )
+        ),
+        
+        fluidRow(
+          box(
+            title = span(icon("chart-bar"), "Comparison Charts"),
+            status = "primary",
+            solidHeader = TRUE,
+            width = 12,
+            
+            tabsetPanel(
+              tabPanel(
+                "N50 Comparison",
+                br(),
+                plotlyOutput("comparison_n50", height = "300px")
+              ),
+              tabPanel(
+                "Total Length",
+                br(),
+                plotlyOutput("comparison_length", height = "300px")
+              ),
+              tabPanel(
+                "Contig Count",
+                br(),
+                plotlyOutput("comparison_contigs", height = "300px")
+              )
+            )
+          )
+        )
+      ),
+      
+      # Help Tab
+      tabItem(
+        tabName = "help",
+        
+        fluidRow(
+          box(
+            title = span(icon("info-circle"), "About This Tool"),
+            status = "info",
+            solidHeader = TRUE,
+            width = 12,
+            
+            h4("MINT Assembly Demo"),
+            p("This tool demonstrates genome assembly using hifiasm, a fast haplotype-resolved 
+               de novo assembler for PacBio HiFi reads."),
+            
+            hr(),
+            
+            h4("Modes"),
+            tags$ul(
+              tags$li(tags$strong("Demo Mode:"), " Load pre-computed assembly results from the 
+                      MINT_Tage sample data. No hifiasm installation required."),
+              tags$li(tags$strong("Run Mode:"), " Execute hifiasm assembly with custom parameters. 
+                      Requires hifiasm to be installed on the server.")
+            ),
+            
+            hr(),
+            
+            h4("Parameters"),
+            tags$ul(
+              tags$li(tags$strong("K-mer Size:"), " The length of k-mers used for overlap detection. 
+                      Larger values increase specificity but may miss some overlaps. Default: 51"),
+              tags$li(tags$strong("Error Correction Rounds:"), " Number of rounds for correcting 
+                      sequencing errors. More rounds improve accuracy but increase runtime. Default: 3"),
+              tags$li(tags$strong("Min Contig Length:"), " Minimum length threshold for filtering 
+                      output contigs in statistics. Default: 500 bp"),
+              tags$li(tags$strong("CPU Threads:"), " Number of parallel threads for assembly. 
+                      More threads = faster assembly. Default: 4")
+            ),
+            
+            hr(),
+            
+            h4("Assembly Statistics"),
+            tags$ul(
+              tags$li(tags$strong("N50:"), " The sequence length of the shortest contig at 50% 
+                      of the total genome length. Higher is better."),
+              tags$li(tags$strong("L50:"), " The smallest number of contigs whose length sum 
+                      produces N50. Lower is better."),
+              tags$li(tags$strong("GC Content:"), " Percentage of guanine-cytosine base pairs 
+                      in the assembly.")
+            ),
+            
+            hr(),
+            
+            h4("Sample Datasets"),
+            tags$ul(
+              tags$li(tags$strong("kokai_100K:"), " 100K coverage assembly"),
+              tags$li(tags$strong("kokai_1M_11x:"), " 1M dataset with 11x coverage"),
+              tags$li(tags$strong("kokai_1M_24x:"), " 1M dataset with 24x coverage")
+            ),
+            
+            hr(),
+            
+            h4("References"),
+            p("Cheng, H., Concepcion, G.T., Feng, X., Zhang, H., & Li, H. (2021). 
+               Haplotype-resolved de novo assembly using phased assembly graphs with hifiasm. 
+               Nature Methods, 18(2), 170-175."),
+            
+            tags$a(href = "https://github.com/chhylp123/hifiasm", 
+                   target = "_blank", 
+                   icon("github"), " hifiasm GitHub Repository")
+          )
+        )
+      )
+    )
+  )
+)
+
+# Server Definition
+server <- function(input, output, session) {
+  
+  # Store GFA file paths
+  demo_gfa_files <- get_demo_gfa_files()
+  
+  # Reactive values for state management
+  rv <- reactiveValues(
+    assembly_running = FALSE,
+    assembly_complete = FALSE,
+    process_info = NULL,
+    current_gfa = NULL,
+    current_stats = NULL,
+    current_source = NULL,  # Track data source (demo name or run params)
+    run_history = data.frame(
+      run_id = character(0),
+      timestamp = character(0),
+      source = character(0),
+      kmer = integer(0),
+      error_rounds = integer(0),
+      min_length = integer(0),
+      n50 = integer(0),
+      l50 = integer(0),
+      total_contigs = integer(0),
+      filtered_contigs = integer(0),
+      filtered_length = integer(0),
+      largest_contig = integer(0),
+      stringsAsFactors = FALSE
+    ),
+    log_content = ""
+  )
+  
+  # Timer for progress updates
+  autoInvalidate <- reactiveTimer(1000)
+  
+  # hifiasm availability status
+  output$hifiasm_status <- renderUI({
+    if (!hifiasm_available()) {
+      div(
+        class = "alert alert-warning",
+        style = "margin-top: 10px; padding: 10px; font-size: 12px;",
+        icon("exclamation-triangle"),
+        " hifiasm not found. Use Demo mode instead."
+      )
+    }
+  })
+  
+  # Status indicator
+  output$status_indicator <- renderUI({
+    if (rv$assembly_running) {
+      div(
+        class = "status-running",
+        icon("spinner", class = "fa-spin"),
+        " Assembly in progress..."
+      )
+    } else if (rv$assembly_complete) {
+      div(
+        class = "status-ready",
+        icon("check-circle"),
+        " Data loaded!"
+      )
+    } else {
+      div(
+        class = "status-ready",
+        icon("circle"),
+        " Ready"
+      )
+    }
+  })
+  
+  # Load demo data
+  observeEvent(input$load_demo, {
+    req(input$demo_gfa)
+    
+    gfa_path <- demo_gfa_files[[input$demo_gfa]]
+    
+    if (is.null(gfa_path) || !file.exists(gfa_path)) {
+      showNotification("GFA file not found", type = "error")
+      return()
+    }
+    
+    # Update state
+    rv$current_gfa <- gfa_path
+    rv$current_source <- input$demo_gfa
+    rv$log_content <- paste0("Loaded pre-computed results from: ", gfa_path, "\n",
+                             "Dataset: ", input$demo_gfa, "\n",
+                             "Timestamp: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"))
+    
+    # Calculate statistics
+    tryCatch({
+      rv$current_stats <- calculate_assembly_stats(rv$current_gfa, input$min_length)
+      rv$assembly_complete <- TRUE
+      updateProgressBar(session, "assembly_progress", value = 100)
+      
+      # Add to history
+      new_row <- data.frame(
+        run_id = paste0("demo_", format(Sys.time(), "%H%M%S")),
+        timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+        source = input$demo_gfa,
+        kmer = NA,
+        error_rounds = NA,
+        min_length = input$min_length,
+        n50 = rv$current_stats$n50,
+        l50 = rv$current_stats$l50,
+        total_contigs = rv$current_stats$total_contigs,
+        filtered_contigs = rv$current_stats$filtered_contigs,
+        filtered_length = rv$current_stats$filtered_length,
+        largest_contig = rv$current_stats$largest_contig,
+        stringsAsFactors = FALSE
+      )
+      rv$run_history <- rbind(rv$run_history, new_row)
+      
+      showNotification(paste("Loaded:", input$demo_gfa), type = "message")
+      
+    }, error = function(e) {
+      showNotification(paste("Error loading data:", e$message), type = "error")
+    })
+  })
+  
+  # Run assembly when button clicked
+  observeEvent(input$run_assembly, {
+    req(input$input_file)
+    
+    # Validate input file
+    if (grepl("No FASTA files found", input$input_file)) {
+      showNotification("Please add FASTA files to the data/ directory", type = "error")
+      return()
+    }
+    
+    # Check if file exists
+    if (!file.exists(input$input_file)) {
+      showNotification(paste("File not found:", input$input_file), type = "error")
+      return()
+    }
+    
+    # Check if hifiasm is available
+    if (!hifiasm_available()) {
+      showNotification("hifiasm not found. Please use Demo mode instead.", type = "error")
+      return()
+    }
+    
+    # Create output directory
+    output_dir <- tempdir()
+    run_id <- format(Sys.time(), "%Y%m%d_%H%M%S")
+    output_prefix <- file.path(output_dir, paste0("assembly_", run_id))
+    
+    # Reset state
+    rv$assembly_running <- TRUE
+    rv$assembly_complete <- FALSE
+    rv$log_content <- ""
+    rv$current_source <- basename(input$input_file)
+    
+    # Update progress bar
+    updateProgressBar(session, "assembly_progress", value = 0)
+    
+    # Run hifiasm
+    tryCatch({
+      rv$process_info <- run_hifiasm(
+        input_file = input$input_file,
+        output_prefix = output_prefix,
+        kmer = input$kmer,
+        threads = input$threads,
+        error_rounds = input$error_rounds
+      )
+      
+      showNotification("Assembly started!", type = "message")
+      
+    }, error = function(e) {
+      rv$assembly_running <- FALSE
+      showNotification(paste("Error starting assembly:", e$message), type = "error")
+    })
+  })
+  
+  # Progress monitoring
+  observe({
+    autoInvalidate()
+    
+    if (rv$assembly_running && !is.null(rv$process_info)) {
+      # Check if process is still running
+      if (is_hifiasm_running(rv$process_info)) {
+        # Update progress
+        progress <- parse_hifiasm_progress(rv$process_info$log_file)
+        updateProgressBar(session, "assembly_progress", value = progress$progress)
+        
+        # Update log
+        if (file.exists(rv$process_info$log_file)) {
+          rv$log_content <- paste(readLines(rv$process_info$log_file, warn = FALSE), 
+                                  collapse = "\n")
+        }
+      } else {
+        # Assembly finished
+        rv$assembly_running <- FALSE
+        rv$assembly_complete <- TRUE
+        updateProgressBar(session, "assembly_progress", value = 100)
+        
+        # Get output files
+        outputs <- get_hifiasm_outputs(rv$process_info$output_prefix)
+        
+        if (length(outputs) > 0 && !is.null(outputs$primary)) {
+          rv$current_gfa <- outputs$primary
+          
+          # Calculate statistics
+          rv$current_stats <- calculate_assembly_stats(rv$current_gfa, input$min_length)
+          
+          # Add to history
+          new_row <- data.frame(
+            run_id = basename(rv$process_info$output_prefix),
+            timestamp = format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
+            source = basename(input$input_file),
+            kmer = input$kmer,
+            error_rounds = input$error_rounds,
+            min_length = input$min_length,
+            n50 = rv$current_stats$n50,
+            l50 = rv$current_stats$l50,
+            total_contigs = rv$current_stats$total_contigs,
+            filtered_contigs = rv$current_stats$filtered_contigs,
+            filtered_length = rv$current_stats$filtered_length,
+            largest_contig = rv$current_stats$largest_contig,
+            stringsAsFactors = FALSE
+          )
+          rv$run_history <- rbind(rv$run_history, new_row)
+          
+          showNotification("Assembly completed successfully!", type = "message")
+        } else {
+          showNotification("Assembly completed but no output files found", type = "warning")
+        }
+      }
+    }
+  })
+  
+  # Log output
+  output$log_output <- renderText({
+    rv$log_content
+  })
+  
+  # Current stage
+  output$current_stage <- renderText({
+    if (rv$assembly_running && !is.null(rv$process_info)) {
+      progress <- parse_hifiasm_progress(rv$process_info$log_file)
+      progress$stage
+    } else if (rv$assembly_complete) {
+      paste("Complete -", rv$current_source)
+    } else {
+      "Ready to start"
+    }
+  })
+  
+  # Value boxes
+  output$stat_contigs <- renderValueBox({
+    val <- if (!is.null(rv$current_stats)) rv$current_stats$filtered_contigs else 0
+    valueBox(
+      value = format(val, big.mark = ","),
+      subtitle = "Contigs",
+      icon = icon("layer-group"),
+      color = "blue"
+    )
+  })
+  
+  output$stat_total_length <- renderValueBox({
+    val <- if (!is.null(rv$current_stats)) rv$current_stats$filtered_length else 0
+    valueBox(
+      value = format(val, big.mark = ","),
+      subtitle = "Total Length (bp)",
+      icon = icon("ruler"),
+      color = "green"
+    )
+  })
+  
+  output$stat_n50 <- renderValueBox({
+    val <- if (!is.null(rv$current_stats)) rv$current_stats$n50 else 0
+    valueBox(
+      value = format(val, big.mark = ","),
+      subtitle = "N50 (bp)",
+      icon = icon("chart-line"),
+      color = "purple"
+    )
+  })
+  
+  output$stat_largest <- renderValueBox({
+    val <- if (!is.null(rv$current_stats)) rv$current_stats$largest_contig else 0
+    valueBox(
+      value = format(val, big.mark = ","),
+      subtitle = "Largest Contig (bp)",
+      icon = icon("trophy"),
+      color = "yellow"
+    )
+  })
+  
+  # Statistics table
+  output$stats_table <- renderTable({
+    req(rv$current_stats)
+    format_stats_table(rv$current_stats)
+  }, striped = TRUE, hover = TRUE, bordered = TRUE)
+  
+  # Plots
+  output$plot_histogram <- renderPlotly({
+    req(rv$current_gfa)
+    lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
+    p <- plot_length_histogram(lengths)
+    ggplotly(p)
+  })
+  
+  output$plot_histogram_log <- renderPlotly({
+    req(rv$current_gfa)
+    lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
+    p <- plot_length_histogram_log(lengths)
+    ggplotly(p)
+  })
+  
+  output$plot_cumulative <- renderPlotly({
+    req(rv$current_gfa)
+    lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
+    p <- plot_cumulative_length(lengths)
+    ggplotly(p)
+  })
+  
+  output$plot_categories <- renderPlotly({
+    req(rv$current_gfa)
+    lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
+    p <- plot_length_categories(lengths)
+    ggplotly(p)
+  })
+  
+  # Contig preview table
+  output$contig_preview_table <- renderDT({
+    req(rv$current_gfa)
+    preview <- get_top_contigs(rv$current_gfa, n = 10, preview_length = 100)
+    
+    datatable(
+      preview,
+      options = list(
+        pageLength = 5,
+        dom = 'tip',
+        columnDefs = list(
+          list(width = '50px', targets = 0),
+          list(width = '150px', targets = 1),
+          list(width = '100px', targets = 2),
+          list(className = 'sequence-preview', targets = 3)
+        )
+      ),
+      rownames = FALSE
+    ) %>%
+      formatStyle('Preview', fontFamily = 'JetBrains Mono, monospace', fontSize = '11px')
+  })
+  
+  # Comparison table
+  output$comparison_table <- renderDT({
+    req(nrow(rv$run_history) > 0)
+    
+    display_df <- rv$run_history %>%
+      select(run_id, timestamp, source, kmer, error_rounds, 
+             n50, l50, filtered_contigs, filtered_length, largest_contig) %>%
+      rename(
+        "Run ID" = run_id,
+        "Time" = timestamp,
+        "Source" = source,
+        "K-mer" = kmer,
+        "Error Rounds" = error_rounds,
+        "N50" = n50,
+        "L50" = l50,
+        "Contigs" = filtered_contigs,
+        "Length" = filtered_length,
+        "Largest" = largest_contig
+      )
+    
+    datatable(
+      display_df,
+      options = list(
+        pageLength = 10,
+        dom = 'tip',
+        order = list(list(1, 'desc'))
+      ),
+      rownames = FALSE
+    ) %>%
+      formatStyle('N50', backgroundColor = styleInterval(
+        quantile(rv$run_history$n50, probs = c(0.33, 0.66), na.rm = TRUE),
+        c('#553333', '#555533', '#335533')
+      ))
+  })
+  
+  # Comparison plots
+  output$comparison_n50 <- renderPlotly({
+    req(nrow(rv$run_history) > 0)
+    p <- plot_comparison(rv$run_history, "n50", "N50 Comparison")
+    ggplotly(p)
+  })
+  
+  output$comparison_length <- renderPlotly({
+    req(nrow(rv$run_history) > 0)
+    p <- plot_comparison(rv$run_history, "filtered_length", "Total Length Comparison")
+    ggplotly(p)
+  })
+  
+  output$comparison_contigs <- renderPlotly({
+    req(nrow(rv$run_history) > 0)
+    p <- plot_comparison(rv$run_history, "filtered_contigs", "Contig Count Comparison")
+    ggplotly(p)
+  })
+  
+  # Clear history
+  observeEvent(input$clear_history, {
+    rv$run_history <- data.frame(
+      run_id = character(0),
+      timestamp = character(0),
+      source = character(0),
+      kmer = integer(0),
+      error_rounds = integer(0),
+      min_length = integer(0),
+      n50 = integer(0),
+      l50 = integer(0),
+      total_contigs = integer(0),
+      filtered_contigs = integer(0),
+      filtered_length = integer(0),
+      largest_contig = integer(0),
+      stringsAsFactors = FALSE
+    )
+    showNotification("History cleared", type = "message")
+  })
+  
+  # Download handlers
+  output$download_fasta <- downloadHandler(
+    filename = function() {
+      paste0("assembly_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".fasta")
+    },
+    content = function(file) {
+      req(rv$current_gfa)
+      gfa_to_fasta(rv$current_gfa, file, input$min_length)
+    }
+  )
+  
+  output$download_stats <- downloadHandler(
+    filename = function() {
+      paste0("assembly_stats_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".csv")
+    },
+    content = function(file) {
+      req(rv$current_stats)
+      stats_df <- format_stats_table(rv$current_stats)
+      write.csv(stats_df, file, row.names = FALSE)
+    }
+  )
+  
+  output$download_gfa <- downloadHandler(
+    filename = function() {
+      paste0("assembly_", format(Sys.time(), "%Y%m%d_%H%M%S"), ".gfa")
+    },
+    content = function(file) {
+      req(rv$current_gfa)
+      file.copy(rv$current_gfa, file)
+    }
+  )
+  
+  # Cleanup on session end
+  session$onSessionEnded(function() {
+    if (!is.null(rv$process_info) && !is.null(rv$process_info$process)) {
+      tryCatch({
+        rv$process_info$process$kill()
+      }, error = function(e) NULL)
+    }
+  })
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)

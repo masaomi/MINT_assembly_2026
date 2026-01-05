@@ -1,0 +1,17 @@
+# Data directories (not tracked)
+MINT_data_20251117
+MINT_Tage/
+data/
+
+# R session files
+.Rhistory
+.RData
+.Rproj.user/
+
+# Temporary files
+*.log
+*.tmp
+
+# OS files
+.DS_Store
+Thumbs.db
