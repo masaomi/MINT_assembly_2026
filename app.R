@@ -674,8 +674,12 @@ server <- function(input, output, session) {
       return()
     }
     
-    # Create output directory
-    output_dir <- tempdir()
+    # Create session-specific output directory for user isolation
+    session_id <- session$token
+    output_dir <- file.path(tempdir(), paste0("session_", session_id))
+    if (!dir.exists(output_dir)) {
+      dir.create(output_dir, recursive = TRUE)
+    }
     run_id <- format(Sys.time(), "%Y%m%d_%H%M%S")
     output_prefix <- file.path(output_dir, paste0("assembly_", run_id))
     
@@ -986,9 +990,18 @@ server <- function(input, output, session) {
   
   # Cleanup on session end
   session$onSessionEnded(function() {
+    # Kill running process
     if (!is.null(rv$process_info) && !is.null(rv$process_info$process)) {
       tryCatch({
         rv$process_info$process$kill()
+      }, error = function(e) NULL)
+    }
+    
+    # Remove session-specific temp directory
+    session_dir <- file.path(tempdir(), paste0("session_", session$token))
+    if (dir.exists(session_dir)) {
+      tryCatch({
+        unlink(session_dir, recursive = TRUE)
       }, error = function(e) NULL)
     }
   })
