@@ -348,14 +348,14 @@ ui <- dashboardPage(
         tabName = "results",
         
         fluidRow(
-          # Statistics Table
+          # Comparison Statistics Table
           box(
-            title = span(icon("table"), "Assembly Statistics"),
+            title = span(icon("scale-balanced"), "Input / Assembly Comparison"),
             status = "primary",
             solidHeader = TRUE,
-            width = 4,
+            width = 5,
             
-            tableOutput("stats_table")
+            tableOutput("comparison_stats_table")
           ),
           
           # Plots
@@ -363,7 +363,7 @@ ui <- dashboardPage(
             title = span(icon("chart-area"), "Visualizations"),
             status = "primary",
             solidHeader = TRUE,
-            width = 8,
+            width = 7,
             
             tabsetPanel(
               tabPanel(
@@ -875,11 +875,54 @@ server <- function(input, output, session) {
     )
   })
   
-  # Statistics table
-  output$stats_table <- renderTable({
+  # Comparison statistics table (Input vs Assembly)
+  output$comparison_stats_table <- renderTable({
     req(rv$current_stats)
-    format_stats_table(rv$current_stats)
-  }, striped = TRUE, hover = TRUE, bordered = TRUE)
+    
+    # Get input stats (may be NULL)
+    input_stats <- rv$input_stats
+    assembly_stats <- rv$current_stats
+    
+    # Build comparison table
+    comparison_df <- data.frame(
+      Metric = c(
+        "Sequences",
+        "Total Length (bp)",
+        "Mean Length (bp)",
+        "Median Length (bp)",
+        "Longest (bp)",
+        "Shortest (bp)",
+        "N50 (bp)",
+        "L50",
+        "GC Content (%)"
+      ),
+      Input = c(
+        if (!is.null(input_stats)) format(input_stats$total_reads, big.mark = ",") else "-",
+        if (!is.null(input_stats)) format(input_stats$total_bases, big.mark = ",") else "-",
+        if (!is.null(input_stats)) format(input_stats$mean_length, big.mark = ",") else "-",
+        if (!is.null(input_stats)) format(input_stats$median_length, big.mark = ",") else "-",
+        if (!is.null(input_stats)) format(input_stats$longest, big.mark = ",") else "-",
+        if (!is.null(input_stats)) format(input_stats$shortest, big.mark = ",") else "-",
+        "-",  # N50 not applicable for input reads
+        "-",  # L50 not applicable for input reads
+        "-"   # GC not calculated for input
+      ),
+      Assembly = c(
+        format(assembly_stats$filtered_contigs, big.mark = ","),
+        format(assembly_stats$filtered_length, big.mark = ","),
+        format(assembly_stats$mean_length, big.mark = ","),
+        format(assembly_stats$median_length, big.mark = ","),
+        format(assembly_stats$largest_contig, big.mark = ","),
+        format(assembly_stats$smallest_contig, big.mark = ","),
+        format(assembly_stats$n50, big.mark = ","),
+        assembly_stats$l50,
+        ifelse(is.na(assembly_stats$gc_content), "-", paste0(assembly_stats$gc_content, "%"))
+      ),
+      stringsAsFactors = FALSE
+    )
+    
+    comparison_df
+  }, striped = TRUE, hover = TRUE, bordered = TRUE, align = "lrr")
   
   # Plots
   output$plot_histogram <- renderPlotly({
