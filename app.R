@@ -1008,15 +1008,21 @@ server <- function(input, output, session) {
       return(NULL)
     }
     
+    # Truncate long read names for display
+    preview$Name <- sapply(preview$Name, function(name) {
+      if (nchar(name) > 20) paste0(substr(name, 1, 17), "...") else name
+    })
+    
     datatable(
       preview,
       options = list(
         pageLength = 5,
         dom = 'tip',
         autoWidth = FALSE,
+        scrollX = FALSE,
         columnDefs = list(
           list(width = '40px', targets = 0),   # Rank - narrow
-          list(width = '80px', targets = 1),   # Name - narrow
+          list(width = '100px', targets = 1),  # Name - slightly wider for truncated names
           list(width = '70px', targets = 2),   # Length - narrow
           list(width = '60%', targets = 3, className = 'sequence-preview')  # Preview - wide
         )
