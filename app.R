@@ -870,11 +870,12 @@ server <- function(input, output, session) {
       options = list(
         pageLength = 5,
         dom = 'tip',
+        autoWidth = FALSE,
         columnDefs = list(
-          list(width = '50px', targets = 0),
-          list(width = '150px', targets = 1),
-          list(width = '100px', targets = 2),
-          list(className = 'sequence-preview', targets = 3)
+          list(width = '40px', targets = 0),   # Rank - narrow
+          list(width = '80px', targets = 1),   # Name - narrow
+          list(width = '70px', targets = 2),   # Length - narrow
+          list(width = '60%', targets = 3, className = 'sequence-preview')  # Preview - wide
         )
       ),
       rownames = FALSE

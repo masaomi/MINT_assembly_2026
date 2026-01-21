@@ -328,6 +328,17 @@ body {
   color: var(--success-color);
 }
 
+/* Sequence preview in DataTable cells */
+.dataTable td.sequence-preview {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--success-color);
+  word-break: break-all;
+  max-width: none;
+  white-space: normal;
+  padding: 8px 12px;
+}
+
 /* Status indicators */
 .status-ready {
   color: var(--success-color);
