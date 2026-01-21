@@ -175,3 +175,100 @@ create_summary_string <- function(stats) {
           format(stats$filtered_length, big.mark = ","),
           format(stats$n50, big.mark = ","))
 }
+
+#' Parse FASTA file and extract sequences
+parse_fasta <- function(fasta_file) {
+  if (!file.exists(fasta_file)) {
+    stop(paste("FASTA file not found:", fasta_file))
+  }
+  
+  lines <- readLines(fasta_file, warn = FALSE)
+  
+  if (length(lines) == 0) {
+    return(data.frame(name = character(0), sequence = character(0), length = integer(0)))
+  }
+  
+  # Find header lines
+  header_idx <- which(startsWith(lines, ">"))
+  
+  if (length(header_idx) == 0) {
+    return(data.frame(name = character(0), sequence = character(0), length = integer(0)))
+  }
+  
+  # Parse each sequence
+  sequences <- lapply(seq_along(header_idx), function(i) {
+    start <- header_idx[i]
+    end <- if (i < length(header_idx)) header_idx[i + 1] - 1 else length(lines)
+    
+    name <- sub("^>", "", lines[start])
+    name <- sub(" .*", "", name)  # Take only the first part before space
+    
+    seq_lines <- lines[(start + 1):end]
+    seq_lines <- seq_lines[!startsWith(seq_lines, ">")]
+    sequence <- paste(seq_lines, collapse = "")
+    
+    data.frame(
+      name = name,
+      sequence = sequence,
+      length = nchar(sequence),
+      stringsAsFactors = FALSE
+    )
+  })
+  
+  result <- do.call(rbind, sequences)
+  return(result)
+}
+
+#' Get top reads from FASTA for preview
+get_top_reads <- function(fasta_file, n = 10, preview_length = 100) {
+  tryCatch({
+    reads <- parse_fasta(fasta_file)
+    
+    if (nrow(reads) == 0) {
+      return(data.frame(Rank = integer(0), Name = character(0), 
+                        Length = integer(0), Preview = character(0)))
+    }
+    
+    # Sort by length (descending) and take top n
+    reads <- reads[order(-reads$length), ]
+    top_n <- head(reads, n)
+    
+    data.frame(
+      Rank = seq_len(nrow(top_n)),
+      Name = top_n$name,
+      Length = top_n$length,
+      Preview = sapply(top_n$sequence, function(seq) {
+        if (nchar(seq) > preview_length) paste0(substr(seq, 1, preview_length), "...")
+        else seq
+      }),
+      stringsAsFactors = FALSE
+    )
+  }, error = function(e) {
+    return(data.frame(Rank = integer(0), Name = character(0), 
+                      Length = integer(0), Preview = character(0)))
+  })
+}
+
+#' Calculate input reads statistics
+calculate_input_stats <- function(fasta_file) {
+  tryCatch({
+    reads <- parse_fasta(fasta_file)
+    
+    if (nrow(reads) == 0) {
+      return(list(total_reads = 0, total_bases = 0, mean_length = 0, 
+                  median_length = 0, longest = 0, shortest = 0))
+    }
+    
+    list(
+      total_reads = nrow(reads),
+      total_bases = sum(reads$length),
+      mean_length = round(mean(reads$length), 0),
+      median_length = round(median(reads$length), 0),
+      longest = max(reads$length),
+      shortest = min(reads$length)
+    )
+  }, error = function(e) {
+    return(list(total_reads = 0, total_bases = 0, mean_length = 0, 
+                median_length = 0, longest = 0, shortest = 0))
+  })
+}

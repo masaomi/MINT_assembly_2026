@@ -78,6 +78,21 @@ get_demo_gfa_files <- function() {
   return(gfa_files)
 }
 
+# Get corresponding input FASTA file for demo datasets
+get_demo_fasta_file <- function(demo_name) {
+  fasta_mapping <- list(
+    "kokai_100K" = file.path(DATA_DIR, "Ckokai_chr1_a_and_b_100K.fasta"),
+    "kokai_1M_11x" = file.path(DATA_DIR, "kokai_1M_11x", "Ckokai_chr1_a_and_b_1M_0.10_percent.fasta"),
+    "kokai_1M_24x" = file.path(DATA_DIR, "Ckokai_chr1_a_and_b_1M.fasta")
+  )
+  
+  fasta_file <- fasta_mapping[[demo_name]]
+  if (!is.null(fasta_file) && file.exists(fasta_file)) {
+    return(fasta_file)
+  }
+  return(NULL)
+}
+
 # Check if hifiasm is available
 hifiasm_available <- function() {
   !is.null(find_hifiasm())
@@ -376,10 +391,30 @@ ui <- dashboardPage(
         ),
         
         fluidRow(
-          # Sequence Preview
+          # Input Reads Preview
           box(
-            title = span(icon("dna"), "Top Contigs Preview"),
-            status = "primary",
+            title = span(icon("file-lines"), "Input Reads Preview"),
+            status = "info",
+            solidHeader = TRUE,
+            width = 12,
+            collapsible = TRUE,
+            collapsed = FALSE,
+            
+            fluidRow(
+              column(3, valueBoxOutput("input_reads_count", width = 12)),
+              column(3, valueBoxOutput("input_total_bases", width = 12)),
+              column(3, valueBoxOutput("input_mean_length", width = 12)),
+              column(3, valueBoxOutput("input_longest", width = 12))
+            ),
+            DTOutput("reads_preview_table")
+          )
+        ),
+        
+        fluidRow(
+          # Assembled Contigs Preview
+          box(
+            title = span(icon("dna"), "Assembled Contigs Preview"),
+            status = "success",
             solidHeader = TRUE,
             width = 12,
             collapsible = TRUE,
@@ -547,6 +582,8 @@ server <- function(input, output, session) {
     current_gfa = NULL,
     current_stats = NULL,
     current_source = NULL,  # Track data source (demo name or run params)
+    input_fasta = NULL,     # Path to input FASTA file
+    input_stats = NULL,     # Input reads statistics
     run_history = data.frame(
       run_id = character(0),
       timestamp = character(0),
@@ -621,6 +658,15 @@ server <- function(input, output, session) {
                              "Dataset: ", input$demo_gfa, "\n",
                              "Timestamp: ", format(Sys.time(), "%Y-%m-%d %H:%M:%S"))
     
+    # Get corresponding input FASTA file
+    fasta_path <- get_demo_fasta_file(input$demo_gfa)
+    rv$input_fasta <- fasta_path
+    if (!is.null(fasta_path) && file.exists(fasta_path)) {
+      rv$input_stats <- calculate_input_stats(fasta_path)
+    } else {
+      rv$input_stats <- NULL
+    }
+    
     # Calculate statistics
     tryCatch({
       rv$current_stats <- calculate_assembly_stats(rv$current_gfa, input$min_length)
@@ -688,6 +734,10 @@ server <- function(input, output, session) {
     rv$assembly_complete <- FALSE
     rv$log_content <- ""
     rv$current_source <- basename(input$input_file)
+    
+    # Store input FASTA info
+    rv$input_fasta <- input$input_file
+    rv$input_stats <- calculate_input_stats(input$input_file)
     
     # Update progress bar
     updateProgressBar(session, "assembly_progress", value = 0)
@@ -858,6 +908,79 @@ server <- function(input, output, session) {
     lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
     p <- plot_length_categories(lengths)
     ggplotly(p)
+  })
+  
+  # Input reads value boxes
+  output$input_reads_count <- renderValueBox({
+    count <- if (!is.null(rv$input_stats)) rv$input_stats$total_reads else 0
+    valueBox(
+      format(count, big.mark = ","),
+      "Reads",
+      icon = icon("list"),
+      color = "light-blue"
+    )
+  })
+  
+  output$input_total_bases <- renderValueBox({
+    bases <- if (!is.null(rv$input_stats)) rv$input_stats$total_bases else 0
+    valueBox(
+      format(bases, big.mark = ","),
+      "Total Bases",
+      icon = icon("ruler"),
+      color = "light-blue"
+    )
+  })
+  
+  output$input_mean_length <- renderValueBox({
+    mean_len <- if (!is.null(rv$input_stats)) rv$input_stats$mean_length else 0
+    valueBox(
+      format(mean_len, big.mark = ","),
+      "Mean Length",
+      icon = icon("chart-line"),
+      color = "light-blue"
+    )
+  })
+  
+  output$input_longest <- renderValueBox({
+    longest <- if (!is.null(rv$input_stats)) rv$input_stats$longest else 0
+    valueBox(
+      format(longest, big.mark = ","),
+      "Longest Read",
+      icon = icon("arrow-up"),
+      color = "light-blue"
+    )
+  })
+  
+  # Input reads preview table
+  output$reads_preview_table <- renderDT({
+    req(rv$input_fasta)
+    
+    if (!file.exists(rv$input_fasta)) {
+      return(NULL)
+    }
+    
+    preview <- get_top_reads(rv$input_fasta, n = 10, preview_length = 100)
+    
+    if (nrow(preview) == 0) {
+      return(NULL)
+    }
+    
+    datatable(
+      preview,
+      options = list(
+        pageLength = 5,
+        dom = 'tip',
+        autoWidth = FALSE,
+        columnDefs = list(
+          list(width = '40px', targets = 0),   # Rank - narrow
+          list(width = '80px', targets = 1),   # Name - narrow
+          list(width = '70px', targets = 2),   # Length - narrow
+          list(width = '60%', targets = 3, className = 'sequence-preview')  # Preview - wide
+        )
+      ),
+      rownames = FALSE
+    ) %>%
+      formatStyle('Preview', fontFamily = 'JetBrains Mono, monospace', fontSize = '11px')
   })
   
   # Contig preview table
