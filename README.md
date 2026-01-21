@@ -53,6 +53,29 @@ R -e "shiny::runApp('app.R', port = 3838)"
 
 Then open http://localhost:3838 in your browser.
 
+### Remote Access (Server Deployment)
+
+To allow access from other machines on the network:
+
+```bash
+R -e "shiny::runApp('app.R', port = 3838, host = '0.0.0.0')"
+```
+
+Then access via `http://<server-hostname>:3838` from a remote machine.
+
+#### Important Notes
+
+- **`host = '0.0.0.0'`**: This binds the server to all network interfaces, allowing external access. Without this option, Shiny defaults to `127.0.0.1` (localhost only).
+- **Firewall**: Ensure port 3838 is open on the server's firewall. Contact your system administrator if needed.
+- **Security Warning**: Exposing Shiny apps directly to the internet is not recommended for production use. Consider:
+  - Using a reverse proxy (nginx/Apache) with HTTPS
+  - Deploying to a managed Shiny Server or ShinyProxy
+  - For FGCZ: Use the official proxy at `https://fgcz-shiny.uzh.ch/`
+- **Background Execution**: For long-running sessions, consider using `nohup` or `screen`:
+  ```bash
+  nohup R -e "shiny::runApp('app.R', port = 3838, host = '0.0.0.0')" &
+  ```
+
 ### Using Demo Mode
 
 1. Select "Demo (Pre-computed)" mode

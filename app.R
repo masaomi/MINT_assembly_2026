@@ -115,10 +115,10 @@ ui <- dashboardPage(
         radioGroupButtons(
           "mode",
           label = "Mode:",
-          choices = c("Demo (Pre-computed)" = "demo", "Run Assembly" = "run"),
+          choices = c("Demo" = "demo", "Run" = "run"),
           selected = "demo",
           status = "primary",
-          size = "sm",
+          size = "normal",
           justified = TRUE
         ),
         
