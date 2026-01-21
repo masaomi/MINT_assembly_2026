@@ -6,9 +6,7 @@ data/
 # R session files
 .Rhistory
 .RData
-.Rproj.user/
-
-# Temporary files
+.Rproj.user/# Temporary files
 *.log
 *.tmp
 
