@@ -191,9 +191,9 @@ ui <- dashboardPage(
             numericInput(
               "threads",
               label = "CPU Threads:",
-              value = 1,
-              min = 1,
-              max = 1,
+              value = 2,
+              min = 2,
+              max = 2,
               step = 1,
               width = "100%"
             )
@@ -756,7 +756,7 @@ server <- function(input, output, session) {
         input_file = input$input_file,
         output_prefix = output_prefix,
         kmer = input$kmer,
-        threads = 1,
+        threads = 2,
         error_rounds = input$error_rounds
       )
       
