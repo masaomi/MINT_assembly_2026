@@ -185,14 +185,18 @@ ui <- dashboardPage(
           ),
           helpText("More rounds = better accuracy but slower"),
           
-          # Thread count
-          sliderInput(
-            "threads",
-            label = "CPU Threads:",
-            min = 1,
-            max = 8,
-            value = 4,
-            step = 1
+          # Thread count (fixed)
+          div(
+            style = "pointer-events: none; opacity: 0.6;",
+            numericInput(
+              "threads",
+              label = "CPU Threads:",
+              value = 1,
+              min = 1,
+              max = 1,
+              step = 1,
+              width = "100%"
+            )
           )
         ),
         
@@ -367,24 +371,29 @@ ui <- dashboardPage(
             
             tabsetPanel(
               tabPanel(
-                "Length Distribution",
+                "Length Dist. (Input)",
                 br(),
-                plotlyOutput("plot_histogram", height = "350px")
+                plotlyOutput("plot_histogram_input", height = "350px")
               ),
               tabPanel(
-                "Log Scale",
+                "Length Dist. (Assembly)",
                 br(),
-                plotlyOutput("plot_histogram_log", height = "350px")
+                plotlyOutput("plot_histogram_assembly", height = "350px")
               ),
               tabPanel(
-                "Cumulative (Nx)",
+                "Log Scale (Input)",
+                br(),
+                plotlyOutput("plot_histogram_log_input", height = "350px")
+              ),
+              tabPanel(
+                "Log Scale (Assembly)",
+                br(),
+                plotlyOutput("plot_histogram_log_assembly", height = "350px")
+              ),
+              tabPanel(
+                "Cumulative (Compare)",
                 br(),
                 plotlyOutput("plot_cumulative", height = "350px")
-              ),
-              tabPanel(
-                "Categories",
-                br(),
-                plotlyOutput("plot_categories", height = "350px")
               )
             )
           )
@@ -526,8 +535,7 @@ ui <- dashboardPage(
                       sequencing errors. More rounds improve accuracy but increase runtime. Default: 3"),
               tags$li(tags$strong("Min Contig Length:"), " Minimum length threshold for filtering 
                       output contigs in statistics. Default: 500 bp"),
-              tags$li(tags$strong("CPU Threads:"), " Number of parallel threads for assembly. 
-                      More threads = faster assembly. Default: 4")
+              tags$li(tags$strong("CPU Threads:"), " Fixed to 1 for demo consistency.")
             ),
             
             hr(),
@@ -748,7 +756,7 @@ server <- function(input, output, session) {
         input_file = input$input_file,
         output_prefix = output_prefix,
         kmer = input$kmer,
-        threads = input$threads,
+        threads = 1,
         error_rounds = input$error_rounds
       )
       
@@ -925,32 +933,73 @@ server <- function(input, output, session) {
   }, striped = TRUE, hover = TRUE, bordered = TRUE, align = "lrr")
   
   # Plots
-  output$plot_histogram <- renderPlotly({
-    req(rv$current_gfa)
-    lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
-    p <- plot_length_histogram(lengths)
+  output$plot_histogram_input <- renderPlotly({
+    req(rv$input_fasta)
+    
+    input_lengths <- c()
+    if (file.exists(rv$input_fasta)) {
+      tryCatch({
+        input_reads <- parse_fasta(rv$input_fasta)
+        input_lengths <- input_reads$length
+      }, error = function(e) {
+        input_lengths <- c()
+      })
+    }
+    
+    p <- plot_length_histogram(input_lengths, title = "Input Reads Length Distribution")
     ggplotly(p)
   })
   
-  output$plot_histogram_log <- renderPlotly({
+  output$plot_histogram_assembly <- renderPlotly({
     req(rv$current_gfa)
     lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
-    p <- plot_length_histogram_log(lengths)
+    p <- plot_length_histogram(lengths, title = "Assembled Contigs Length Distribution")
+    ggplotly(p)
+  })
+  
+  output$plot_histogram_log_input <- renderPlotly({
+    req(rv$input_fasta)
+    
+    input_lengths <- c()
+    if (file.exists(rv$input_fasta)) {
+      tryCatch({
+        input_reads <- parse_fasta(rv$input_fasta)
+        input_lengths <- input_reads$length
+      }, error = function(e) {
+        input_lengths <- c()
+      })
+    }
+    
+    p <- plot_length_histogram_log(input_lengths, title = "Input Reads Length (Log Scale)")
+    ggplotly(p)
+  })
+  
+  output$plot_histogram_log_assembly <- renderPlotly({
+    req(rv$current_gfa)
+    lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
+    p <- plot_length_histogram_log(lengths, title = "Assembled Contigs Length (Log Scale)")
     ggplotly(p)
   })
   
   output$plot_cumulative <- renderPlotly({
     req(rv$current_gfa)
-    lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
-    p <- plot_cumulative_length(lengths)
-    ggplotly(p)
-  })
-  
-  output$plot_categories <- renderPlotly({
-    req(rv$current_gfa)
-    lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
-    p <- plot_length_categories(lengths)
-    ggplotly(p)
+    
+    # Get assembly lengths
+    assembly_lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
+    
+    # Get input lengths if available
+    input_lengths <- c()
+    if (!is.null(rv$input_fasta) && file.exists(rv$input_fasta)) {
+      tryCatch({
+        input_reads <- parse_fasta(rv$input_fasta)
+        input_lengths <- input_reads$length
+      }, error = function(e) {
+        input_lengths <- c()
+      })
+    }
+    
+    p <- plot_cumulative_comparison(input_lengths, assembly_lengths)
+    ggplotly(p) %>% layout(legend = list(orientation = "h", y = -0.15))
   })
   
   # Input reads value boxes

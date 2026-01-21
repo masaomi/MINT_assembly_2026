@@ -282,3 +282,260 @@ plot_multi_comparison <- function(comparison_df) {
   
   return(p)
 }
+
+#' Create length distribution comparison (Input vs Assembly)
+#' @param input_lengths Vector of input read lengths
+#' @param assembly_lengths Vector of assembled contig lengths
+#' @param title Plot title
+#' @return ggplot object
+plot_length_comparison <- function(input_lengths, assembly_lengths, 
+                                   title = "Length Distribution: Input vs Assembly") {
+  has_input <- length(input_lengths) > 0
+  has_assembly <- length(assembly_lengths) > 0
+  
+  if (!has_input && !has_assembly) {
+    return(ggplot() + 
+             annotate("text", x = 0.5, y = 0.5, label = "No data available") +
+             theme_void())
+  }
+  
+  # Combine data
+  df <- data.frame()
+  
+  if (has_input) {
+    df <- rbind(df, data.frame(
+      length = input_lengths,
+      type = "Input Reads"
+    ))
+  }
+  
+  if (has_assembly) {
+    df <- rbind(df, data.frame(
+      length = assembly_lengths,
+      type = "Assembled Contigs"
+    ))
+  }
+  
+  df$type <- factor(df$type, levels = c("Input Reads", "Assembled Contigs"))
+  
+  p <- ggplot(df, aes(x = length, fill = type)) +
+    geom_density(alpha = 0.5, color = NA) +
+    scale_x_continuous(labels = scales::comma) +
+    scale_fill_manual(values = c("Input Reads" = "#3498db", "Assembled Contigs" = "#2ecc71")) +
+    labs(
+      title = title,
+      x = "Sequence Length (bp)",
+      y = "Density",
+      fill = "Data Type"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 10),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    )
+  
+  return(p)
+}
+
+#' Create length distribution comparison with log scale
+#' @param input_lengths Vector of input read lengths
+#' @param assembly_lengths Vector of assembled contig lengths
+#' @param title Plot title
+#' @return ggplot object
+plot_length_comparison_log <- function(input_lengths, assembly_lengths, 
+                                       title = "Length Distribution (Log Scale): Input vs Assembly") {
+  has_input <- length(input_lengths) > 0
+  has_assembly <- length(assembly_lengths) > 0
+  
+  if (!has_input && !has_assembly) {
+    return(ggplot() + 
+             annotate("text", x = 0.5, y = 0.5, label = "No data available") +
+             theme_void())
+  }
+  
+  # Combine data
+  df <- data.frame()
+  
+  if (has_input) {
+    df <- rbind(df, data.frame(
+      length = input_lengths,
+      type = "Input Reads"
+    ))
+  }
+  
+  if (has_assembly) {
+    df <- rbind(df, data.frame(
+      length = assembly_lengths,
+      type = "Assembled Contigs"
+    ))
+  }
+  
+  df$type <- factor(df$type, levels = c("Input Reads", "Assembled Contigs"))
+  
+  p <- ggplot(df, aes(x = length, fill = type)) +
+    geom_density(alpha = 0.5, color = NA) +
+    scale_x_log10(labels = scales::comma) +
+    scale_fill_manual(values = c("Input Reads" = "#9b59b6", "Assembled Contigs" = "#e67e22")) +
+    labs(
+      title = title,
+      x = "Sequence Length (bp, log scale)",
+      y = "Density",
+      fill = "Data Type"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 10),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    )
+  
+  return(p)
+}
+
+#' Create cumulative length comparison plot
+#' @param input_lengths Vector of input read lengths
+#' @param assembly_lengths Vector of assembled contig lengths
+#' @param title Plot title
+#' @return ggplot object
+plot_cumulative_comparison <- function(input_lengths, assembly_lengths, 
+                                       title = "Cumulative Length: Input vs Assembly") {
+  has_input <- length(input_lengths) > 0
+  has_assembly <- length(assembly_lengths) > 0
+  
+  if (!has_input && !has_assembly) {
+    return(ggplot() + 
+             annotate("text", x = 0.5, y = 0.5, label = "No data available") +
+             theme_void())
+  }
+  
+  df <- data.frame()
+  
+  if (has_input) {
+    sorted_input <- sort(input_lengths, decreasing = TRUE)
+    cumsum_input <- cumsum(sorted_input)
+    total_input <- sum(sorted_input)
+    
+    df <- rbind(df, data.frame(
+      cumsum_percent = cumsum_input / total_input * 100,
+      length = sorted_input,
+      type = "Input Reads"
+    ))
+  }
+  
+  if (has_assembly) {
+    sorted_assembly <- sort(assembly_lengths, decreasing = TRUE)
+    cumsum_assembly <- cumsum(sorted_assembly)
+    total_assembly <- sum(sorted_assembly)
+    
+    df <- rbind(df, data.frame(
+      cumsum_percent = cumsum_assembly / total_assembly * 100,
+      length = sorted_assembly,
+      type = "Assembled Contigs"
+    ))
+  }
+  
+  df$type <- factor(df$type, levels = c("Input Reads", "Assembled Contigs"))
+  
+  p <- ggplot(df, aes(x = cumsum_percent, y = length, color = type)) +
+    geom_line(linewidth = 1.2) +
+    scale_x_continuous(breaks = seq(0, 100, 10)) +
+    scale_y_continuous(labels = scales::comma) +
+    scale_color_manual(values = c("Input Reads" = "#e74c3c", "Assembled Contigs" = "#2ecc71")) +
+    labs(
+      title = title,
+      x = "Cumulative Percentage (%)",
+      y = "Sequence Length (bp)",
+      color = "Data Type"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 10),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    )
+  
+  return(p)
+}
+
+#' Create category comparison bar plot
+#' @param input_lengths Vector of input read lengths
+#' @param assembly_lengths Vector of assembled contig lengths
+#' @param title Plot title
+#' @return ggplot object
+plot_category_comparison <- function(input_lengths, assembly_lengths, 
+                                     title = "Length Categories: Input vs Assembly") {
+  has_input <- length(input_lengths) > 0
+  has_assembly <- length(assembly_lengths) > 0
+  
+  if (!has_input && !has_assembly) {
+    return(ggplot() + 
+             annotate("text", x = 0.5, y = 0.5, label = "No data available") +
+             theme_void())
+  }
+  
+  # Define categories
+  categories <- c("< 1 kb", "1-10 kb", "10-50 kb", "50-100 kb", "> 100 kb")
+  
+  categorize <- function(lengths) {
+    dplyr::case_when(
+      lengths < 1000 ~ "< 1 kb",
+      lengths < 10000 ~ "1-10 kb",
+      lengths < 50000 ~ "10-50 kb",
+      lengths < 100000 ~ "50-100 kb",
+      TRUE ~ "> 100 kb"
+    )
+  }
+  
+  df <- data.frame()
+  
+  if (has_input) {
+    input_cats <- table(factor(categorize(input_lengths), levels = categories))
+    df <- rbind(df, data.frame(
+      Category = names(input_cats),
+      Count = as.numeric(input_cats),
+      Type = "Input Reads"
+    ))
+  }
+  
+  if (has_assembly) {
+    assembly_cats <- table(factor(categorize(assembly_lengths), levels = categories))
+    df <- rbind(df, data.frame(
+      Category = names(assembly_cats),
+      Count = as.numeric(assembly_cats),
+      Type = "Assembled Contigs"
+    ))
+  }
+  
+  df$Category <- factor(df$Category, levels = categories)
+  df$Type <- factor(df$Type, levels = c("Input Reads", "Assembled Contigs"))
+  
+  p <- ggplot(df, aes(x = Category, y = Count, fill = Type)) +
+    geom_bar(stat = "identity", position = "dodge", alpha = 0.8) +
+    geom_text(aes(label = Count), position = position_dodge(width = 0.9), 
+              vjust = -0.5, size = 3) +
+    scale_fill_manual(values = c("Input Reads" = "#3498db", "Assembled Contigs" = "#2ecc71")) +
+    labs(
+      title = title,
+      x = "Length Category",
+      y = "Count",
+      fill = "Data Type"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 10),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "bottom",
+      panel.grid.minor = element_blank()
+    )
+  
+  return(p)
+}
