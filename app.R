@@ -931,14 +931,14 @@ server <- function(input, output, session) {
       })
     }
     
-    p <- plot_length_histogram(input_lengths, title = "Input Reads Length Distribution")
+    p <- plot_length_histogram(input_lengths, title = "Input Reads Length Distribution", xlabel = "Read Length (bp)")
     ggplotly(p)
   })
   
   output$plot_histogram_assembly <- renderPlotly({
     req(rv$current_gfa)
     lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
-    p <- plot_length_histogram(lengths, title = "Assembled Contigs Length Distribution")
+    p <- plot_length_histogram(lengths, title = "Assembled Contigs Length Distribution", xlabel = "Contig Length (bp)")
     ggplotly(p)
   })
   

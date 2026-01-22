@@ -4,12 +4,13 @@
 library(ggplot2)
 library(dplyr)
 
-#' Create contig length histogram
-#' @param lengths Vector of contig lengths
+#' Create length histogram
+#' @param lengths Vector of lengths
 #' @param title Plot title
 #' @param bins Number of bins for histogram
+#' @param xlabel X-axis label
 #' @return ggplot object
-plot_length_histogram <- function(lengths, title = "Contig Length Distribution", bins = 30) {
+plot_length_histogram <- function(lengths, title = "Length Distribution", bins = 30, xlabel = "Length (bp)") {
   if (length(lengths) == 0) {
     return(ggplot() + 
              annotate("text", x = 0.5, y = 0.5, label = "No data available") +
@@ -24,7 +25,7 @@ plot_length_histogram <- function(lengths, title = "Contig Length Distribution",
     scale_y_continuous(labels = scales::comma) +
     labs(
       title = title,
-      x = "Contig Length (bp)",
+      x = xlabel,
       y = "Count"
     ) +
     theme_minimal() +
