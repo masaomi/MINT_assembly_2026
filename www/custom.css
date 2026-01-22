@@ -476,6 +476,19 @@ body {
     z-index: 1040 !important;
     width: 230px !important;
     transition: transform 0.3s ease-in-out, left 0.3s ease-in-out !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+  }
+  
+  /* Ensure sidebar content can scroll */
+  .main-sidebar .sidebar {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  
+  .main-sidebar .sidebar-menu,
+  .main-sidebar .sidebar-form {
+    overflow: visible !important;
   }
   
   /* When sidebar is collapsed (default on mobile) */
