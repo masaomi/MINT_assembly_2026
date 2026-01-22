@@ -478,17 +478,33 @@ body {
     transition: transform 0.3s ease-in-out, left 0.3s ease-in-out !important;
     overflow-y: auto !important;
     overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
   }
   
-  /* Ensure sidebar content can scroll */
+  /* Ensure sidebar content can scroll - inner section */
   .main-sidebar .sidebar {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
+    padding-bottom: 50px !important;
+  }
+  
+  /* Sidebar form (parameter controls) - make scrollable */
+  .main-sidebar .sidebar-form,
+  .main-sidebar section.sidebar {
     height: auto !important;
     overflow: visible !important;
   }
   
-  .main-sidebar .sidebar-menu,
-  .main-sidebar .sidebar-form {
+  /* Sidebar menu items */
+  .main-sidebar .sidebar-menu {
     overflow: visible !important;
+  }
+  
+  /* Add padding at bottom for easier scrolling */
+  .sidebar > .sidebar-menu:last-child,
+  .sidebar > div:last-child {
+    padding-bottom: 30px !important;
   }
   
   /* When sidebar is collapsed (default on mobile) */
