@@ -539,8 +539,6 @@ ui <- dashboardPage(
             
             h4("Sample Datasets"),
             tags$ul(
-              tags$li(tags$strong("kokai_100K:"), " 100K coverage assembly"),
-              tags$li(tags$strong("kokai_1M_11x:"), " 1M dataset with 11x coverage"),
               tags$li(tags$strong("kokai_1M_24x:"), " 1M dataset with 24x coverage")
             ),
             
