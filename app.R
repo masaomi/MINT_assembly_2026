@@ -379,21 +379,6 @@ ui <- dashboardPage(
                 "Length Dist. (Assembly)",
                 br(),
                 plotlyOutput("plot_histogram_assembly", height = "350px")
-              ),
-              tabPanel(
-                "Log Scale (Input)",
-                br(),
-                plotlyOutput("plot_histogram_log_input", height = "350px")
-              ),
-              tabPanel(
-                "Log Scale (Assembly)",
-                br(),
-                plotlyOutput("plot_histogram_log_assembly", height = "350px")
-              ),
-              tabPanel(
-                "Cumulative (Compare)",
-                br(),
-                plotlyOutput("plot_cumulative", height = "350px")
               )
             )
           )
@@ -955,51 +940,6 @@ server <- function(input, output, session) {
     lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
     p <- plot_length_histogram(lengths, title = "Assembled Contigs Length Distribution")
     ggplotly(p)
-  })
-  
-  output$plot_histogram_log_input <- renderPlotly({
-    req(rv$input_fasta)
-    
-    input_lengths <- c()
-    if (file.exists(rv$input_fasta)) {
-      tryCatch({
-        input_reads <- parse_fasta(rv$input_fasta)
-        input_lengths <- input_reads$length
-      }, error = function(e) {
-        input_lengths <- c()
-      })
-    }
-    
-    p <- plot_length_histogram_log(input_lengths, title = "Input Reads Length (Log Scale)")
-    ggplotly(p)
-  })
-  
-  output$plot_histogram_log_assembly <- renderPlotly({
-    req(rv$current_gfa)
-    lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
-    p <- plot_length_histogram_log(lengths, title = "Assembled Contigs Length (Log Scale)")
-    ggplotly(p)
-  })
-  
-  output$plot_cumulative <- renderPlotly({
-    req(rv$current_gfa)
-    
-    # Get assembly lengths
-    assembly_lengths <- get_contig_lengths(rv$current_gfa, input$min_length)
-    
-    # Get input lengths if available
-    input_lengths <- c()
-    if (!is.null(rv$input_fasta) && file.exists(rv$input_fasta)) {
-      tryCatch({
-        input_reads <- parse_fasta(rv$input_fasta)
-        input_lengths <- input_reads$length
-      }, error = function(e) {
-        input_lengths <- c()
-      })
-    }
-    
-    p <- plot_cumulative_comparison(input_lengths, assembly_lengths)
-    ggplotly(p) %>% layout(legend = list(orientation = "h", y = -0.15))
   })
   
   # Input reads value boxes
